@@ -1,0 +1,192 @@
+services:
+    electrs:
+        build: https://github.com/romanz/electrs.git#v0.10.10
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
+            - "host.containers.internal:host-gateway"
+        ports:
+            - "50001:50001"
+        entrypoint: >
+            sh -c '
+                echo -n "auth=\"${BITCOIN_RPC_USER}:${BITCOIN_RPC_PASS}\"" > /root/.electrs/config.toml && \
+                exec electrs \
+                    --db-dir "/root/.electrs/db" \
+                    --daemon-dir "/root/.bitcoin" \
+                    --daemon-rpc-addr "${BITCOIN_HOST}:${BITCOIN_RPC_PORT}" \
+                    --daemon-p2p-addr "${BITCOIN_HOST}:${BITCOIN_P2P_PORT}" \
+                    --electrum-rpc-addr "0.0.0.0:50001" \
+                    --log-filters "debug"
+            '
+        volumes:
+            - ${BITCOIN_DATA}:/root/.bitcoin:ro
+            - ./electrs:/root/.electrs:z
+        restart: unless-stopped
+
+    setup-datum-gateway:
+        image: docker.io/alpine:3
+        restart: "no"
+        volumes:
+            - ./datum:/datum:z
+        entrypoint: >
+            sh -c '
+                set -e;
+                apk add --no-cache jq wget;
+                echo "📄 Preparing config.json...";
+            
+                if [ ! -f /datum/config.json ]; then
+                    echo "⬇️ No config found, downloading default example...";
+                    wget -qO /datum/config.json \
+                        https://raw.githubusercontent.com/OCEAN-xyz/datum_gateway/refs/tags/v0.4.0beta/doc/example_datum_gateway_config.json;
+                fi
+                jq \
+                    ".bitcoind.rpcurl = \"http://${BITCOIN_HOST}:${BITCOIN_RPC_PORT}\" 
+                    | .bitcoind.rpcuser = \"${BITCOIN_RPC_USER}\" 
+                    | .bitcoind.rpcpassword = \"${BITCOIN_RPC_PASS}\" 
+                    | .api.admin_password = \"${DATUM_ADMIN_PASS}\" 
+                    | .api.modify_conf = true 
+                    | .mining.pool_address = \"${DATUM_POOL_ADDRESS}\"" \
+                    /datum/config.json > /datum/config.tmp && \
+                    mv /datum/config.tmp /datum/config.json;
+                echo "✅ Config written to /datum/config.json";
+                cat /datum/config.json;
+                echo "✅ Setup complete!";
+                tail -f /dev/null;
+            '
+
+    datum-gateway:
+        build: https://github.com/OCEAN-xyz/datum_gateway.git#v0.4.0beta
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
+            - "host.containers.internal:host-gateway"
+        ports:
+            - "23334:23334"
+            - "7152:7152"
+        volumes:
+            - ${BITCOIN_DATA}:/app/.bitcoin:ro
+            - ./datum:/app/config:z
+        restart: unless-stopped
+
+    cln:
+        image: docker.io/elementsproject/lightningd:v25.09
+        restart: unless-stopped
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
+            - "host.containers.internal:host-gateway"
+        entrypoint: >
+            sh -c '
+                exec lightningd \
+                    --network=bitcoin \
+                    --alias=MyNode \
+                    --clnrest-port=3010 \
+                    --clnrest-protocol=http \
+                    --clnrest-host=0.0.0.0 \
+                    --bitcoin-rpcconnect=${BITCOIN_HOST} \
+                    --bitcoin-rpcport=${BITCOIN_RPC_PORT} \
+                    --bitcoin-datadir=/app/bitcoin \
+                    --lightning-dir=/app/data/cln-data;
+            '
+        volumes:
+            - ./core-lightning:/app/data:z
+            - ${BITCOIN_DATA}:/app/bitcoin:ro
+        ports:
+            - "9735:9735"
+            - "3010:3010"
+
+    cln-app:
+        image: ghcr.io/elementsproject/cln-application:25.07.2
+        restart: unless-stopped
+        command: >
+            sh -c '
+                set -e;
+                if [ ! -f /app/data/config.json ]; then
+                    echo "📄 No config found, creating default /app/data/config.json";
+                    mkdir -p /app/data;
+                    echo "{
+                        \"unit\": \"SATS\",
+                        \"fiatUnit\": \"USD\",
+                        \"appMode\": \"DARK\",
+                        \"isLoading\": false,
+                        \"error\": null,
+                        \"singleSignOn\": true,
+                        \"password\": \"\"
+                    }" > /app/data/config.json;
+                fi
+                npm run start;
+            '
+        depends_on:
+            - cln
+        environment:
+            - BITCOIN_NETWORK=bitcoin
+            - APP_PROTOCOL=https
+            - APP_HOST=0.0.0.0
+            - APP_PORT=2103
+            - APP_MODE=production
+            - APP_CONNECT=REST
+            - APP_CONFIG_FILE=/app/data/config.json
+            - LIGHTNING_REST_PROTOCOL=http
+            - LIGHTNING_REST_HOST=cln
+            - LIGHTNING_REST_PORT=3010
+            - LIGHTNING_DATA_DIR=/app/data/cln-data
+            - LIGHTNING_VARS_FILE=/app/data/cln-data/vars
+        ports:
+            - "2103:2103"
+        volumes:
+            - ./core-lightning:/app/data:z
+
+    mempool-web:
+        image: ghcr.io/retropex/mempoolfrontend:v3.3.0-dev
+        restart: unless-stopped
+        stop_grace_period: 10s
+        command: "./wait-for mempool-db:3306 --timeout=720 -- nginx -g 'daemon off;'"
+        environment:
+            FRONTEND_HTTP_PORT: "8998"
+            BACKEND_MAINNET_HTTP_HOST: "mempool-api"
+            AUDIT: "true"
+        ports:
+            - "8998:8998"
+
+    mempool-api:
+        image: ghcr.io/retropex/mempoolbackend:v3.3.0-dev
+        restart: unless-stopped
+        stop_grace_period: 10s
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
+            - "host.containers.internal:host-gateway"
+        ports:
+            - "8999:8999"
+        depends_on:
+            - electrs
+        command: "./wait-for-it.sh mempool-db:3306 --timeout=720 --strict -- ./start.sh"
+        environment:
+            MEMPOOL_BACKEND: "electrum"
+            ELECTRUM_HOST: "electrs"
+            ELECTRUM_PORT: "50001"
+            ELECTRUM_TLS_ENABLED: "false"
+            CORE_RPC_HOST: "${BITCOIN_HOST}"
+            CORE_RPC_PORT: "${BITCOIN_RPC_PORT}"
+            CORE_RPC_USERNAME: "${BITCOIN_RPC_USER}"
+            CORE_RPC_PASSWORD: "${BITCOIN_RPC_PASS}"
+            DATABASE_ENABLED: "true"
+            DATABASE_HOST: "mempool-db"
+            DATABASE_DATABASE: "mempool"
+            DATABASE_USERNAME: "mempool"
+            DATABASE_PASSWORD: "mempool"
+            STATISTICS_ENABLED: "true"
+            MEMPOOL_BLOCKS_SUMMARIES_INDEXING: "true"
+            MEMPOOL_GOGGLES_INDEXING: "true"
+            MEMPOOL_AUDIT: "true"
+        volumes:
+            - ./mempool/backend/cache:/backend/cache:z
+            - ${BITCOIN_DATA}:/backend/.bitcoin:ro
+
+    mempool-db:
+        image: docker.io/mariadb:10.5.21
+        restart: unless-stopped
+        stop_grace_period: 10s
+        environment:
+            MYSQL_DATABASE: "mempool"
+            MYSQL_USER: "mempool"
+            MYSQL_PASSWORD: "mempool"
+            MYSQL_ROOT_PASSWORD: "admin"
+        volumes:
+            - ./mempool/mysql:/var/lib/mysql:z
