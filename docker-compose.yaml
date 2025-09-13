@@ -49,6 +49,8 @@ services:
                     mv /datum/config.tmp /datum/config.json;
                 echo "✅ Config written to /datum/config.json";
                 cat /datum/config.json;
+                echo "🔐 Setting permissions...";
+                chown -R 999:999 /datum # datumuser
                 echo "✅ Setup complete!";
                 tail -f /dev/null;
             '
@@ -62,8 +64,8 @@ services:
             - "23334:23334"
             - "7152:7152"
         volumes:
-            - ${BITCOIN_DATA}:/app/.bitcoin:ro
             - ./datum:/app/config:z
+            - ${BITCOIN_DATA}:/app/.bitcoin:ro
         restart: unless-stopped
 
     cln:
