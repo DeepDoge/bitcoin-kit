@@ -55,3 +55,4 @@
 - Datum Stratum: `stratum+tcp://localhost:23334` (Mining)
 - Core Lightning: `http://localhost:2103` (Web App)
 - Mempool Space: `http://localhost:8998` (Web App)
+- Electrum Server: `localhost:50001` (Electrum Wallets)
