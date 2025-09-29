@@ -8,7 +8,9 @@ services:
             - "50001:50001"
         entrypoint: >
             sh -c '
-                echo -n "auth=\"${BITCOIN_RPC_USER}:${BITCOIN_RPC_PASS}\"" > /root/.electrs/config.toml && \
+                set -e;
+                mkdir -p /root/.electrs;
+                echo -n "auth=\"${BITCOIN_RPC_USER}:${BITCOIN_RPC_PASS}\"" > /root/.electrs/config.toml;
                 exec electrs \
                     --db-dir "/root/.electrs/db" \
                     --daemon-dir "/root/.bitcoin" \
@@ -20,6 +22,45 @@ services:
         volumes:
             - ${BITCOIN_DATA}:/root/.bitcoin:ro
             - ./electrs:/root/.electrs:z
+        restart: unless-stopped
+
+    electrs-tls:
+        image: alpine:3
+        depends_on:
+            - electrs
+        ports:
+            - "50002:50002"
+        volumes:
+            - ./electrs/tls:/tls:z
+        entrypoint: >
+            sh -c '
+                set -e;
+                apk add --no-cache stunnel openssl;
+                mkdir -p /tls;
+
+                if [ ! -f /tls/cert.pem ] || [ ! -f /tls/key.pem ]; then
+                    echo "🔐 Generating self-signed TLS cert for electrs…";
+                    openssl req -new -x509 -days 365 -nodes \
+                        -subj "/CN=${ELECTRS_TLS_CN:-electrs}" \
+                        -out /tls/cert.pem -keyout /tls/key.pem;
+                fi;
+
+                mkdir -p /etc/stunnel;
+                echo "
+                foreground = yes
+                debug = 3
+
+                [electrs]
+                accept = 0.0.0.0:50002
+                connect = electrs:50001
+                cert = /tls/cert.pem
+                key  = /tls/key.pem
+                " > /etc/stunnel/electrs.conf;
+
+                exec stunnel /etc/stunnel/electrs.conf;
+            '
+        environment:
+            - ELECTRS_TLS_CN=electrs
         restart: unless-stopped
 
     setup-datum-gateway:
