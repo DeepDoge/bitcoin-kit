@@ -51,8 +51,9 @@
 
 ## Services
 
-- Datum: `http://localhost:7152` (Admin Interface)
-- Datum Stratum: `stratum+tcp://localhost:23334` (Mining)
-- Core Lightning: `http://localhost:2103` (Web App)
-- Mempool Space: `http://localhost:8998` (Web App)
-- Electrum Server: `localhost:50001` (Electrum Wallets)
+- Datum: `http://localhost:7152`
+- Datum Stratum: `stratum+tcp://localhost:23334`
+- Core Lightning: `http://localhost:2103`
+- Mempool Space: `http://localhost:8998`
+- Electrum Server: `localhost:50001`
+- Electrum Server (TLS): `localhost:50002`
