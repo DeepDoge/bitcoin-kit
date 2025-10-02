@@ -21,7 +21,7 @@ services:
             '
         volumes:
             - ${BITCOIN_DATA}:/root/.bitcoin:ro
-            - ./electrs:/root/.electrs:z
+            - ./electrs:/root/.electrs:U,Z
         restart: unless-stopped
 
     electrs-tls:
@@ -31,7 +31,7 @@ services:
         ports:
             - "50002:50002"
         volumes:
-            - ./electrs/tls:/tls:z
+            - ./electrs/tls:/tls:U,Z
         entrypoint: >
             sh -c '
                 set -e;
@@ -125,6 +125,8 @@ services:
                     --clnrest-host=0.0.0.0 \
                     --bitcoin-rpcconnect=${BITCOIN_HOST} \
                     --bitcoin-rpcport=${BITCOIN_RPC_PORT} \
+                    --bitcoin-rpcuser=${BITCOIN_RPC_USER} \
+                    --bitcoin-rpcpassword=${BITCOIN_RPC_PASS} \
                     --bitcoin-datadir=/app/bitcoin \
                     --lightning-dir=/app/data/cln-data;
             '
@@ -179,7 +181,7 @@ services:
     mempool-web:
         image: ghcr.io/retropex/mempoolfrontend:v3.3.0-dev
         restart: unless-stopped
-        stop_grace_period: 1m
+        stop_grace_period: 30s
         command: "./wait-for mempool-db:3306 --timeout=720 -- nginx -g 'daemon off;'"
         environment:
             FRONTEND_HTTP_PORT: "8998"
@@ -191,7 +193,7 @@ services:
     mempool-api:
         image: ghcr.io/retropex/mempoolbackend:v3.3.0-dev
         restart: unless-stopped
-        stop_grace_period: 1m
+        stop_grace_period: 30s
         extra_hosts:
             - "host.docker.internal:host-gateway"
             - "host.containers.internal:host-gateway"
@@ -219,17 +221,17 @@ services:
             MEMPOOL_GOGGLES_INDEXING: "true"
             MEMPOOL_AUDIT: "true"
         volumes:
-            - ./mempool/backend/cache:/backend/cache:z
+            - ./mempool/backend/cache:/backend/cache:U,Z
             - ${BITCOIN_DATA}:/backend/.bitcoin:ro
 
     mempool-db:
         image: docker.io/mariadb:10.5.21
         restart: unless-stopped
-        stop_grace_period: 1m
+        stop_grace_period: 30s
         environment:
             MYSQL_DATABASE: "mempool"
             MYSQL_USER: "mempool"
             MYSQL_PASSWORD: "mempool"
             MYSQL_ROOT_PASSWORD: "admin"
         volumes:
-            - ./mempool/mysql:/var/lib/mysql:z
+            - ./mempool/mysql:/var/lib/mysql:U,Z
