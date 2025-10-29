@@ -179,7 +179,7 @@ services:
             - ./core-lightning:/app/data:z
 
     mempool-web:
-        image: ghcr.io/retropex/mempoolfrontend:v3.3.0-dev
+        image: ghcr.io/retropex/mempoolfrontend:v3.3.0-dev2
         restart: unless-stopped
         stop_grace_period: 30s
         command: "./wait-for mempool-db:3306 --timeout=720 -- nginx -g 'daemon off;'"
@@ -191,7 +191,7 @@ services:
             - "8998:8998"
 
     mempool-api:
-        image: ghcr.io/retropex/mempoolbackend:v3.3.0-dev
+        image: ghcr.io/retropex/mempoolbackend:v3.3.0-dev2
         restart: unless-stopped
         stop_grace_period: 30s
         extra_hosts:
