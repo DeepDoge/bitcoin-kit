@@ -110,13 +110,14 @@ services:
         restart: unless-stopped
 
     cln:
-        image: docker.io/elementsproject/lightningd:v25.09
+        image: docker.io/elementsproject/lightningd:v25.12
         restart: unless-stopped
         extra_hosts:
             - "host.docker.internal:host-gateway"
             - "host.containers.internal:host-gateway"
         entrypoint: >
             sh -c '
+            	ln -s /app/data/cln-data/bitcoin /root/.lightning/bitcoin;
                 exec lightningd \
                     --network=bitcoin \
                     --alias=MyNode \
@@ -132,13 +133,13 @@ services:
             '
         volumes:
             - ./core-lightning:/app/data:z
-            - ${BITCOIN_DATA}:/app/bitcoin:ro
+            - ${BITCOIN_DATA}:/app/bitcoin:ro,z
         ports:
             - "9735:9735"
             - "3010:3010"
 
     cln-app:
-        image: ghcr.io/elementsproject/cln-application:25.07.2
+        image: ghcr.io/elementsproject/cln-application:25.07.3
         restart: unless-stopped
         command: >
             sh -c '
