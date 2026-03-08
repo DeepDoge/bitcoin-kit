@@ -57,3 +57,7 @@
 - Mempool Space: `http://localhost:8998`
 - Electrum Server: `localhost:50001`
 - Electrum Server (TLS): `localhost:50002`
+
+## License
+
+[MIT](LICENSE)
